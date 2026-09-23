@@ -1,7 +1,6 @@
 """Carga del modelo e inferencia. Separado de la API para poder testearlo aislado."""
 import os
 from pathlib import Path
-
 import joblib
 import numpy as np
 
