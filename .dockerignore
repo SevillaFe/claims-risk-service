@@ -1,0 +1,11 @@
+# Lo que NO se envía al contexto de build: imagen más pequeña y sin basura/secretos
+.git
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache
+tests
+infra
+k8s
+*.md
+app/model.joblib

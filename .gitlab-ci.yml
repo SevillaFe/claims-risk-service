@@ -1,0 +1,113 @@
+# =====================================================================
+# Pipeline: lint -> test -> build -> infra
+# Cada "job" corre en un contenedor limpio (image:) sobre un runner de GitLab.
+# Si un stage falla, los siguientes no se ejecutan: el código roto no llega a imagen.
+# =====================================================================
+
+stages:
+  - lint
+  - test
+  - build
+  - infra
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  IMAGE_TAG: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"   # tag = commit -> trazabilidad
+
+# Caché de pip entre pipelines: jobs más rápidos (y más baratos)
+.python_job:
+  image: python:3.12-slim
+  cache:
+    key:
+      files: [requirements.txt, requirements-dev.txt]   # se invalida si cambian las deps
+    paths: [.cache/pip]
+
+# ---------------------------------------------------------------------
+lint:
+  extends: .python_job
+  stage: lint
+  script:
+    - pip install ruff==0.16.8
+    - ruff check .
+    - ruff format --check .
+
+# ---------------------------------------------------------------------
+test:
+  extends: .python_job
+  stage: test
+  script:
+    - pip install -r requirements.txt -r requirements-dev.txt
+    - pytest -v --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml          # GitLab muestra los tests en la pestaña del pipeline/MR
+
+# ---------------------------------------------------------------------
+# Build de la imagen y push al Container Registry integrado de GitLab.
+# Docker-in-Docker (dind): el job arranca un daemon Docker como "service".
+build:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    # CI_REGISTRY_* son variables predefinidas: GitLab las inyecta en cada job
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - docker build -t "$IMAGE_TAG" .
+    - docker push "$IMAGE_TAG"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        docker tag "$IMAGE_TAG" "$CI_REGISTRY_IMAGE:latest"
+        docker push "$CI_REGISTRY_IMAGE:latest"
+      fi
+
+# ---------------------------------------------------------------------
+# Push a AWS ECR autenticando con OIDC (sin access keys guardadas en GitLab).
+# Solo se ejecuta en main Y si has definido AWS_ROLE_ARN y ECR_REGISTRY
+# en Settings > CI/CD > Variables (valores del output de Terraform).
+push_ecr:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  needs: [test]
+  id_tokens:
+    AWS_OIDC_TOKEN:
+      aud: sts.amazonaws.com       # debe coincidir con client_id_list del provider OIDC
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    AWS_REGION: eu-central-1
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/web_identity_token
+  before_script:
+    - apk add --no-cache aws-cli
+    - echo "$AWS_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+    # La AWS CLI detecta AWS_ROLE_ARN + AWS_WEB_IDENTITY_TOKEN_FILE y asume el rol sola
+    - aws sts get-caller-identity
+    - aws ecr get-login-password | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+  script:
+    - docker build -t "$ECR_REGISTRY/claims-risk-service:$CI_COMMIT_SHORT_SHA" .
+    - docker push "$ECR_REGISTRY/claims-risk-service:$CI_COMMIT_SHORT_SHA"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $AWS_ROLE_ARN && $ECR_REGISTRY'
+
+# ---------------------------------------------------------------------
+# Validación de la infraestructura como código (sin credenciales AWS).
+# En un equipo real aquí iría también "terraform plan" en cada MR
+# y "terraform apply" con aprobación manual (when: manual) en main.
+terraform_validate:
+  stage: infra
+  image:
+    name: hashicorp/terraform:1.9
+    entrypoint: [""]
+  needs: []                        # no depende de los stages anteriores: corre en paralelo
+  script:
+    - cd infra
+    - terraform fmt -check -recursive
+    - terraform init -backend=false
+    - terraform validate
+  rules:
+    - changes: [infra/**/*]        # solo si cambia algo en infra/
