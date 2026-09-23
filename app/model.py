@@ -1,5 +1,4 @@
 """Carga del modelo e inferencia. Separado de la API para poder testearlo aislado."""
-import sys
 import os
 from pathlib import Path
 
