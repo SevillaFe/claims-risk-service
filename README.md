@@ -1,19 +1,19 @@
 # claims-risk-service
 
-Microservicio de IA (scoring de riesgo de siniestros, datos sintéticos) con el ciclo
-de operación completo: contenedor, CI/CD, infraestructura como código, Kubernetes y observability.
+AI microservice (claims risk scoring, synthetic data) with the full operations
+lifecycle: container, CI/CD, infrastructure as code, Kubernetes and observability.
 
 ```
  git push ──► GitLab CI: lint ─► test ─► build ──► GitLab Registry / AWS ECR (OIDC)
                                    └──► terraform validate
                                              │
- Terraform ──► AWS: ECR · S3 (artefactos) · IAM rol OIDC (mínimo privilegio)
+ Terraform ──► AWS: ECR · S3 (artifacts) · IAM OIDC role (least privilege)
                                              │
- Kubernetes (kind) ◄── imagen ── Deployment (2 réplicas, probes, limits) ─► Service
-                                    └── /metrics (Prometheus) · logs JSON (stdout)
+ Kubernetes (kind) ◄── image ── Deployment (2 replicas, probes, limits) ─► Service
+                                    └── /metrics (Prometheus) · JSON logs (stdout)
 ```
 
-## Ejecutar en local
+## Run locally
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt -r requirements-dev.txt
@@ -42,18 +42,18 @@ cd infra && cp terraform.tfvars.example terraform.tfvars
 terraform init && terraform fmt && terraform validate && terraform plan
 ```
 
-## Decisiones de diseño
-| Decisión | Motivo |
+## Design decisions
+| Decision | Rationale |
 |---|---|
-| Multi-stage build, usuario no-root | Imagen pequeña, menos superficie de ataque |
-| Liveness `/health` vs. readiness `/ready` | Reiniciar solo si el proceso muere; sin tráfico mientras el modelo no está cargado |
-| Logs JSON a stdout, métricas Prometheus | Estándar cloud-native: consultables en CloudWatch/Loki, dashboards y alertas en Grafana |
-| Tags de imagen = commit SHA, ECR IMMUTABLE | Trazabilidad: cada imagen en producción apunta a un commit exacto |
-| OIDC GitLab → AWS en vez de access keys | Credenciales temporales por job, nada que rotar ni que se pueda filtrar |
-| IAM de mínimo privilegio, limitado a `main` | Una rama cualquiera no puede publicar en producción |
-| `default_tags` + lifecycle policy en ECR | Asignación y control de costes |
+| Multi-stage build, non-root user | Smaller image, reduced attack surface |
+| Liveness `/health` vs. readiness `/ready` | Only restart if the process dies; no traffic while the model isn't loaded |
+| JSON logs to stdout, Prometheus metrics | Cloud-native standard: queryable in CloudWatch/Loki, dashboards and alerts in Grafana |
+| Image tags = commit SHA, ECR IMMUTABLE | Traceability: every image in production maps to an exact commit |
+| GitLab OIDC → AWS instead of access keys | Temporary per-job credentials, nothing to rotate or leak |
+| Least-privilege IAM, restricted to `main` | An arbitrary branch can't publish to production |
+| `default_tags` + ECR lifecycle policy | Cost allocation and control |
 
-## Próximos pasos (producción)
-- Remote state en S3 con locking; `terraform plan` en cada MR y `apply` manual en `main`
-- Despliegue GitOps con Helm + ArgoCD sobre EKS
-- Alertas (latencia p95, tasa de 5xx) y monitorización de drift del modelo
+## Next steps (production)
+- Remote state in S3 with locking; `terraform plan` on every MR and manual `apply` on `main`
+- GitOps deployment with Helm + ArgoCD on EKS
+- Alerts (p95 latency, 5xx rate) and model drift monitoring
