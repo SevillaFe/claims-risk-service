@@ -1,0 +1,13 @@
+# Service = IP/DNS estable delante de los pods (que son efímeros y cambian de IP).
+# Reparte el tráfico SOLO entre los pods que pasan la readinessProbe.
+apiVersion: v1
+kind: Service
+metadata:
+  name: claims-risk-service
+spec:
+  type: ClusterIP                      # accesible solo dentro del cluster
+  selector:
+    app: claims-risk-service
+  ports:
+    - port: 80                         # puerto del Service
+      targetPort: 8000                 # puerto del contenedor

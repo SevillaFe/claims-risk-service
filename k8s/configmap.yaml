@@ -1,0 +1,8 @@
+# Configuración separada de la imagen: cambiar el LOG_LEVEL no requiere rebuild.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: claims-risk-config
+data:
+  LOG_LEVEL: "INFO"
+  MODEL_VERSION: "0.1.0"

@@ -1,0 +1,58 @@
+# Deployment = "quiero N réplicas de este contenedor, y mantenlas vivas".
+# Kubernetes compara continuamente el estado deseado (este fichero) con el real.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: claims-risk-service
+  labels:
+    app: claims-risk-service
+spec:
+  replicas: 2                          # 2 pods: si uno cae, el otro sigue sirviendo
+  selector:
+    matchLabels:
+      app: claims-risk-service         # qué pods "pertenecen" a este Deployment
+  template:
+    metadata:
+      labels:
+        app: claims-risk-service
+    spec:
+      securityContext:
+        runAsNonRoot: true             # Kubernetes rechaza arrancar si la imagen corre como root
+        runAsUser: 10001
+      containers:
+        - name: api
+          image: claims-risk-service:local
+          imagePullPolicy: IfNotPresent  # usa la imagen cargada en kind, no intenta descargarla
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: claims-risk-config
+          resources:
+            requests:                  # lo que el scheduler RESERVA para colocar el pod
+              cpu: "100m"
+              memory: "256Mi"
+            limits:                    # tope: si supera la memoria -> OOMKilled
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:               # si falla -> reinicia el contenedor
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:              # si falla -> lo saca del Service (sin reiniciar)
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp          # único sitio escribible
+      volumes:
+        - name: tmp
+          emptyDir: {}
