@@ -6,13 +6,13 @@
 #
 # Para la demo usamos state local. Para activarlo, crea el bucket y descomenta:
 #
-# terraform {
-#   backend "s3" {
-#     bucket       = "mi-bucket-de-terraform-state"
-#     key          = "claims-risk-service/terraform.tfstate"
-#     region       = "eu-central-1"
-#     encrypt      = true
-#     use_lockfile = true   # locking nativo en S3 (Terraform >= 1.10); antes: DynamoDB
-#   }
-# }
+terraform {
+  backend "s3" {
+    bucket       = "mi-bucket-de-terraform-state-130695430342-eu-west-1-an"
+    key          = "claims-risk-service/terraform.tfstate"
+    region       = "eu-west-1"
+    encrypt      = true
+    use_lockfile = true # locking nativo en S3 (Terraform >= 1.10); antes: DynamoDB
+  }
+}
 # ------------------------------------------------------------------

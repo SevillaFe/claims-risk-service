@@ -1,2 +1,2 @@
 # Copia este fichero como terraform.tfvars y rellena tu usuario de GitLab
-gitlab_project_path = "TU_USUARIO_GITLAB/claims-risk-service"
+gitlab_project_path = "SevillaFe_lab/claims-risk-service"
