@@ -1,59 +1,79 @@
-# claims-risk-service
+# Federated Learning Setup with Akida on Raspberry Pi 5
 
-AI microservice (claims risk scoring, synthetic data) with the full operations
-lifecycle: container, CI/CD, infrastructure as code, Kubernetes and observability.
+This repository demonstrates a lightweight Federated Learning (FL) setup using neuromorphic AI models deployed on BrainChip Akida PCIe accelerators paired with Raspberry Pi 5 devices. It provides scripts for a centralized Flask server to receive model weight updates and a client script to upload Akida model weights via HTTP.
+
+## Overview
+
+Neuromorphic models trained on individual RPI5-Akida nodes can contribute updates to a shared model hosted on a central server. This setup simulates a federated learning architecture for edge AI applications that require privacy, low latency, and energy efficiency.
+
+## Repository Structure
 
 ```
- git push ──► GitLab CI: lint ─► test ─► build ──► GitLab Registry / AWS ECR (OIDC)
-                                   └──► terraform validate
-                                             │
- Terraform ──► AWS: ECR · S3 (artifacts) · IAM OIDC role (least privilege)
-                                             │
- Kubernetes (kind) ◄── image ── Deployment (2 replicas, probes, limits) ─► Service
-                                    └── /metrics (Prometheus) · JSON logs (stdout)
+├── federated_learning_server.py       # Flask server to receive model weights
+├── federated_learning_client.py       # Client script to upload Akida model weights
+├── model_utils.py                     # (Optional) Placeholder for weight handling utilities
+├── model_training.py                  # (Optional) Placeholder for training-related code
+└── README.md
 ```
 
-## Run locally
+## Requirements
+
+- Python 3.7+
+- Flask
+- NumPy
+- Requests
+- Akida Python SDK (required on client device)
+
+Install the dependencies using:
+
 ```bash
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt -r requirements-dev.txt
-python -m app.train
-pytest -v
-uvicorn app.main:app --reload        # http://localhost:8000/docs
+pip install flask numpy requests
 ```
 
-## Docker
+## Getting Started
+
+### 1. Launch the Federated Learning Server
+
+On a device intended to act as the central server:
+
 ```bash
-docker build -t claims-risk-service:local .
-docker run --rm -p 8000:8000 claims-risk-service:local
+python3 federated_learning_server.py
 ```
 
-## Kubernetes (kind)
+The server will listen for HTTP POST requests on port `5000` and respond to updates sent to the `/upload` endpoint.
+
+### 2. Configure and Run the Client
+
+On each RPI5-Akida node:
+
+- Ensure the Akida model has been trained.
+- Replace the `SERVER_IP` variable inside `federated_learning_client.py` with the IP address of the server.
+- Run the script:
+
 ```bash
-kind create cluster --name claims
-kind load docker-image claims-risk-service:local --name claims
-kubectl apply -f k8s/
-kubectl port-forward svc/claims-risk-service 8080:80
+python3 federated_learning_client.py
 ```
 
-## Terraform
-```bash
-cd infra && cp terraform.tfvars.example terraform.tfvars
-terraform init && terraform fmt && terraform validate && terraform plan
+This will extract the weights from the Akida model and transmit them to the server in JSON format.
+
+## Example Response
+
+After a successful POST:
+
+```
+Model weights uploaded successfully.
 ```
 
-## Design decisions
-| Decision | Rationale |
-|---|---|
-| Multi-stage build, non-root user | Smaller image, reduced attack surface |
-| Liveness `/health` vs. readiness `/ready` | Only restart if the process dies; no traffic while the model isn't loaded |
-| JSON logs to stdout, Prometheus metrics | Cloud-native standard: queryable in CloudWatch/Loki, dashboards and alerts in Grafana |
-| Image tags = commit SHA, ECR IMMUTABLE | Traceability: every image in production maps to an exact commit |
-| GitLab OIDC → AWS instead of access keys | Temporary per-job credentials, nothing to rotate or leak |
-| Least-privilege IAM, restricted to `main` | An arbitrary branch can't publish to production |
-| `default_tags` + ECR lifecycle policy | Cost allocation and control |
+If an error occurs (e.g., connection refused or malformed weights), you will see an appropriate status message.
 
-## Next steps (production)
-- Remote state in S3 with locking; `terraform plan` on every MR and manual `apply` on `main`
-- GitOps deployment with Helm + ArgoCD on EKS
-- Alerts (p95 latency, 5xx rate) and model drift monitoring
+## Security Considerations
+
+This is a prototype-level setup for research. For real-world deployment:
+- Use HTTPS instead of HTTP.
+- Authenticate clients using tokens or API keys.
+- Validate the format and shape of model weights before acceptance.
+
+## Acknowledgements
+
+This implementation is part of a broader effort to demonstrate low-cost, energy-efficient neuromorphic AI for distributed and networked edge environments, particularly leveraging the BrainChip Akida PCIe board and Raspberry Pi 5 hardware.
+
